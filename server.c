@@ -6,10 +6,39 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <time.h>
 
+
+void getCurrTime(char *buf, size_t size){
+    time_t rawtime;
+    struct tm *timeinfo;
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", timeinfo);
+}
+
+void log_event(FILE *logfile, const char *message){
+    char timebuf[64];
+    getCurrTime(timebuf, sizeof(timebuf));
+    printf("[%s] %s\n", timebuf, message);
+    fprintf(logfile, "[%s] %s\n", timebuf, message);
+    fflush(logfile);
+    
+}
 
 int main(int argc, char *argv[]){
+    char logmsg[1100];
+    char client_ip[INET_ADDRSTRLEN];
+
+
+    FILE *logfile = fopen("server.log", "a");
+    if (logfile == NULL){
+        perror("fopen");
+        return 1;
+}
+    
     int server_fd = socket(AF_INET, SOCK_STREAM, 0 );
+    log_event(logfile, "SERVER TURNING ON");
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
@@ -45,19 +74,27 @@ int main(int argc, char *argv[]){
         perror("accept");
         return 1;
     }
-    printf("Client connected!\n");
+    inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, sizeof(client_ip));
+    snprintf(logmsg, sizeof(logmsg), "CLIENT CONNECTED: %s", client_ip);
+    log_event(logfile, logmsg);
     while(1){
-        bytes_received = recv(client_fd, buffer, sizeof(buffer), 0);
+        bytes_received = recv(client_fd, buffer, sizeof(buffer), 0);    
         if (bytes_received<= 0){
             printf("Client disconnected\n");
+            log_event(logfile, "CLIENT DISCONNECTED");
             break;
         }
         buffer[bytes_received] = '\0';
+        buffer[strcspn(buffer, "\n")] = '\0';
+        snprintf(logmsg, sizeof(logmsg), "MESSAGE: %s", buffer);
         printf("Client said: %s\n", buffer);
+        
+        log_event(logfile, logmsg);
         send(client_fd, buffer, bytes_received, 0);
 
     }
     close(client_fd);
+    log_event(logfile, "SERVER SHUTTING DOWN");
     close(server_fd);
 
     return 0;
